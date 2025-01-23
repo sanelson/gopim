@@ -103,15 +103,16 @@ Currently the tool only supports activating Azure Subscription access roles. Mor
 <!-- GETTING STARTED -->
 ## Getting Started
 
-TBD
+Currently only Linux is supported as a platform.
 
 ### Prerequisites
 
-TBD
+* [AZ Cli](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt)
+* [Go](https://go.dev) (optional for building from source)
 
 ### Installation
 
-TBD
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -120,7 +121,20 @@ TBD
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-TBD
+```
+Usage of pim:
+  -debug
+        Debug mode
+  -subs string
+        Comma separated subscription names for PIM activation (required)
+  -tenant string
+        Azure Tenant ID
+```
+
+Note: You need to specify your Azure Tenant ID either in the `pim.toml` config file or as an argument.
+
+Use the `pim.toml.example` file as a template.
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
