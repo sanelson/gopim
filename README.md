@@ -135,6 +135,22 @@ Note: You need to specify your Azure Tenant ID either in the `pim.toml` config f
 
 Use the `pim.toml.example` file as a template.
 
+To run, simply use `go run` , just provide a list of subscriptions to activate using PIM.
+
+```
+go run pim.go --subs 'Learning Subscription'
+```
+
+If successful, you should see some output like the following:
+
+```
+10:28AM INF Already logged in to Azure. Skipping login step.
+10:28AM INF Successfully retrieved roleEligibilityScheduleInstances
+10:28AM INF Role found id=/subscriptions/00000000-0000-0000-0000-000000000000 subscription="Learning Subscription"
+10:28AM INF Found roleEligibilityScheduleInstance subscription="Learning Subscription"
+10:28AM INF Activating PIM displayName="Learning Subscription"
+10:28AM INF Successfully activated PIM
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -200,9 +216,7 @@ Project Link: [https://github.com/sanelson/gopim](https://github.com/sanelson/go
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* []()
-* []()
-* []()
+* [This awesome README template from Othneil Drew](https://github.com/othneildrew/Best-README-Template)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
