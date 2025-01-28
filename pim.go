@@ -87,7 +87,13 @@ func runCommand(cmd string, env []string) (string, *CommandError) {
 }
 
 func azureCLIVersion() (string, *CommandError) {
-	version, cmdErr := runCommand("az version --output json --query '\"azure-cli\"'", nil)
+	escape_quote := `\"` // escape double quotes for bash
+
+	if runtime.GOOS == "windows" {
+		escape_quote = "`\"" // escape double quotes for PowerShell
+	}
+
+	version, cmdErr := runCommand("az version --output json --query '" + escape_quote + "azure-cli" + escape_quote + "'", nil)
 
 	if cmdErr != nil {
 		return "", cmdErr
@@ -141,6 +147,19 @@ func getAccessToken() (string, error) {
 }
 
 func loginToAzure(tenant string) error {
+	if runtime.GOOS == "windows" {
+		// Open the login URL in the default web browser vs using WAM (Windows Authentication Manager)
+		// WAM behavior is still rather glitchy
+		// TODO: Is there a way to just set this for the current session/process?
+		_, cmdErr := runCommand("az config set core.enable_broker_on_windows=false", nil)
+
+		if cmdErr != nil {
+			cmdErr.LogError()
+			slog.Error("failed to set Azure CLI config to disable WAM login")
+			os.Exit(1)
+		}
+	}
+
 	_, cmdErr := runCommand(fmt.Sprintf("az login --allow-no-subscriptions -t '%s'", tenant), nil)
 
 	if cmdErr != nil {
