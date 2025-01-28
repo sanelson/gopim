@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -59,7 +60,14 @@ func (e *CommandError) LogError() {
 
 func runCommand(cmd string, env []string) (string, *CommandError) {
 	slog.Debug("Running command:", "cmd", cmd)
-	command := exec.Command("sh", "-c", cmd)
+
+	var command *exec.Cmd
+	if runtime.GOOS == "windows" {
+		command = exec.Command("powershell", "-nologo", "-noprofile", cmd)
+	} else {
+		command = exec.Command("sh", "-c", cmd)
+	}
+
 	command.Env = append(os.Environ(), env...)
 	var out bytes.Buffer
 	var stderr bytes.Buffer
