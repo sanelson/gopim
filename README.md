@@ -70,6 +70,7 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
+    <li><a href="#building">Building</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
@@ -103,16 +104,37 @@ Currently the tool only supports activating Azure Subscription access roles. Mor
 <!-- GETTING STARTED -->
 ## Getting Started
 
-Currently only Linux is supported as a platform.
+Currently supported on Linux and Windows. OSX builds OK but needs testing.
 
 ### Prerequisites
 
 * [AZ Cli](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt)
-* [Go](https://go.dev) (optional for building from source)
+* [Go](https://go.dev) (optional for running/building from source)
 
 ### Installation
 
+From the release builds, simply download the appropriate binary for your platform.
 
+* [OSX](https://github.com/sanelson/gopim/releases/download/v0.0.1/gopim-darwin-amd64)
+* [Linux](https://github.com/sanelson/gopim/releases/download/v0.0.1/gopim-linux-amd64)
+* [Win32](https://github.com/sanelson/gopim/releases/download/v0.0.1/gopim-windows-386.exe)
+* [Win64](https://github.com/sanelson/gopim/releases/download/v0.0.1/gopim-windows-amd64.exe)
+
+You can run as is or rename for your platform so the name isn't so long.
+
+Windows
+
+```
+move gopim-windows-amd64.exe pim.exe
+```
+
+Linux
+
+```
+mv gopim-linux-amd64 pim && chmod 755 pim
+```
+
+You can also just run directly from a clone of this repo if you have golang installed.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -135,11 +157,29 @@ Note: You need to specify your Azure Tenant ID either in the `pim.toml` config f
 
 Use the `pim.toml.example` file as a template.
 
+### Using Go to run
+
 To run, simply use `go run` , just provide a list of subscriptions to activate using PIM.
 
 ```
-go run pim.go --subs 'Learning Subscription'
+go run pim.go -subs 'Learning Subscription,Other Subscription'
 ```
+
+### Using installed binaries to run
+
+Linux/OSX
+
+```
+pim -subs 'Learning Subscription,Other Subscription'
+```
+
+Windows
+
+```
+pim.exe -subs 'Learning Subscription,Other Subscription'
+```
+
+### Sample output
 
 If successful, you should see some output like the following:
 
@@ -154,15 +194,37 @@ If successful, you should see some output like the following:
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+<!-- BUILDING -->
+## Building
 
+Go has a lovely cross compilation toolchain and is very easy to use. To build binaries for Windows (32/64bit), Linux (64bit) and OSX (64bit), use the `build.sh` script. If there is a need, I can create a Windows compatible build script as well.
+
+Simply provide the project url as the build script arg:
+
+```
+./build.sh github.com/sanelson/gopim
+```
+
+If you want to just build for your current platform without the build script, run:
+
+```
+go build -o pim
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- ROADMAP -->
 ## Roadmap
 
+- [ ] Support PIM Group activations
 - [ ] Remove dependency on az cli
 - [ ] Set up automated github builds
 - [ ] Support Windows & OSX
+  - [X] Support Windows
+  - [ ] Support and test OSX
 - [ ] Create TUI for interactive use
+- [ ] Create winget compatible installer
+- [ ] Create Linux install script
 
 See the [open issues](https://github.com/sanelson/gopim/issues) for a full list of proposed features (and known issues).
 
