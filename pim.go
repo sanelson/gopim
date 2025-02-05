@@ -87,13 +87,13 @@ func runCommand(cmd string, env []string) (string, *CommandError) {
 }
 
 func azureCLIVersion() (string, *CommandError) {
-	escape_quote := `\"` // escape double quotes for bash
+	escape_quote := `"` // escape double quotes for bash
 
 	if runtime.GOOS == "windows" {
 		escape_quote = "`\"" // escape double quotes for PowerShell
 	}
 
-	version, cmdErr := runCommand("az version --output json --query '" + escape_quote + "azure-cli" + escape_quote + "'", nil)
+	version, cmdErr := runCommand("az version --output json --query '"+escape_quote+"azure-cli"+escape_quote+"'", nil)
 
 	if cmdErr != nil {
 		return "", cmdErr
