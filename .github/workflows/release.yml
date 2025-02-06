@@ -26,16 +26,6 @@ jobs:
       - name: Run cross-compile script
         run: ./build.sh github.com/sanelson/gopim
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: gopim
-          path: |
-            gopim-darwin-amd64
-            gopim-linux-amd64
-            gopim-windows-386.exe
-            gopim-windows-amd64.exe
-
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
