@@ -162,7 +162,7 @@ Use the `pim.toml.example` file as a template.
 To run, simply use `go run` , just provide a list of subscriptions to activate using PIM.
 
 ```
-go run pim.go -subs 'Learning Subscription,Other Subscription'
+go run . -subs 'Learning Subscription,Other Subscription'
 ```
 
 ### Using pre-built binaries
