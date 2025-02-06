@@ -3,6 +3,7 @@ module github.com/sanelson/gopim
 go 1.23.0
 
 require (
+	github.com/earthboundkid/versioninfo/v2 v2.24.1
 	github.com/google/uuid v1.6.0
 	github.com/lmittmann/tint v1.0.6
 	github.com/spf13/viper v1.19.0

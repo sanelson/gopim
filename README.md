@@ -165,15 +165,29 @@ To run, simply use `go run` , just provide a list of subscriptions to activate u
 go run pim.go -subs 'Learning Subscription,Other Subscription'
 ```
 
-### Using installed binaries to run
+### Using pre-built binaries
 
-Linux/OSX
+#### Linux/OSX
+
+Run from the local directory
+
+```
+./pim -subs 'Learning Subscription,Other Subscription'
+```
+
+Or copy the executable to a location in your path such as `/usr/local/bin` and reference `pim` from anywhere
+
+```
+sudo cp pim /usr/local/bin/ && sudo chmod 775 /usr/local/bin/pim
+```
+
+Now run without specifying path...
 
 ```
 pim -subs 'Learning Subscription,Other Subscription'
 ```
 
-Windows
+#### Windows
 
 ```
 pim.exe -subs 'Learning Subscription,Other Subscription'
