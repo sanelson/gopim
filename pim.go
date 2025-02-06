@@ -15,18 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/earthboundkid/versioninfo/v2"
 	"github.com/google/uuid"
 	"github.com/lmittmann/tint"
 	"github.com/spf13/viper"
-)
-
-var (
-	debug = flag.Bool("debug", false, "Debug mode")
-	//login = flag.Bool("login", false, "Login to Azure")
-	//list   = flag.Bool("list", false, "List subscriptions")
-	subs   = flag.String("subs", "", "Comma separated subscription names for PIM activation (required)")
-	tenant = flag.String("tenant", "", "Azure Tenant ID")
 )
 
 func readConfig() {
@@ -235,8 +226,21 @@ func getRESIs(subscriptions []string, token string, client http.Client) (map[str
 }
 
 func main() {
-	versioninfo.AddFlag(nil)
+	// Handle command line flags
+	debug := flag.Bool("debug", false, "Debug mode")
+	subs := flag.String("subs", "", "Comma separated subscription names for PIM activation (required)")
+	tenant := flag.String("tenant", "", "Azure Tenant ID")
+	var version bool
+	flag.BoolVar(&version, "version", false, "print version information and exit")
+	flag.BoolVar(&version, "v", false, "short alias for -version")
+
+	//versioninfo.AddFlag(nil)
 	flag.Parse()
+
+	if version {
+		fmt.Println("Version:", Version())
+		os.Exit(0)
+	}
 
 	// Set the default log level
 	lvl := new(slog.LevelVar)
