@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/earthboundkid/versioninfo/v2"
 	"github.com/google/uuid"
 	"github.com/lmittmann/tint"
 	"github.com/spf13/viper"
@@ -234,6 +235,7 @@ func getRESIs(subscriptions []string, token string, client http.Client) (map[str
 }
 
 func main() {
+	versioninfo.AddFlag(nil)
 	flag.Parse()
 
 	// Set the default log level
