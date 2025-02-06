@@ -1,0 +1,47 @@
+name: Create release
+
+# Adapted from: https://dev.to/ayoub3bidi/quick-tutorial-how-to-add-a-release-github-workflow-56ib
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release pushed tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+        run: |
+          gh release create "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${tag#v}" \
+              --generate-notes
+
+      - name: Checkout repository @ Tag
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run cross-compile script
+        run: ./build.sh github.com/sanelson/gopim
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gopim
+          path: |
+            gopim-darwin-amd64
+            gopim-linux-amd64
+            gopim-windows-386.exe
+            gopim-windows-amd64.exe
