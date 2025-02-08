@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  all-release:
     name: Release pushed tag
     runs-on: ubuntu-latest
     steps:
@@ -24,7 +24,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Run cross-compile script
-        run: ./build.sh github.com/sanelson/gopim
+        run: ./build.sh github.com/sanelson/gopim all
 
       - name: Create release
         env:
@@ -35,8 +35,31 @@ jobs:
               --repo="$GITHUB_REPOSITORY" \
               --title="${tag}" \
               --generate-notes \
-              gopim-darwin-amd64 \
               gopim-linux-amd64 \
               gopim-windows-386.exe \
               gopim-windows-amd64.exe
+
+  osx-release:
+    name: Release pushed tag
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository @ Tag
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run native OSX build
+        run: ./build.sh github.com/sanelson/gopim darwin/amd64
+
+      - name: Upload OSX binary to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+        run: |
+          gh release upload "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              gopim-darwin-amd64
 
