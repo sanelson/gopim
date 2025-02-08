@@ -40,7 +40,8 @@ jobs:
               gopim-windows-amd64.exe
 
   osx-release:
-    name: Release pushed tag
+    needs: all-release
+    name: Release OSX binary
     runs-on: macos-latest
     steps:
       - name: Checkout repository @ Tag

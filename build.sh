@@ -7,7 +7,8 @@ if [[ -z "$package" ]]; then
 fi
 platform_name=$2
 package_split=(${package//\// })
-package_name=${package_split[-1]}
+# Get the last element of the array in a bash <4.0 compatible way. Thanks OSX...
+package_name=${package_split[@]:(-1)}
 	
 platforms=("windows/amd64" "windows/386" "darwin/amd64" "linux/amd64")
 
