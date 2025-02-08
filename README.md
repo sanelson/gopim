@@ -104,7 +104,7 @@ Currently the tool only supports activating Azure Subscription access roles. Mor
 <!-- GETTING STARTED -->
 ## Getting Started
 
-Currently supported on Linux and Windows. OSX builds OK but needs testing.
+Currently supported on Linux, OSX and Windows.
 
 ### Prerequisites
 
@@ -131,6 +131,12 @@ Linux
 
 ```
 mv gopim-linux-amd64 pim && chmod 755 pim
+```
+
+OSX
+
+```
+mv gopim-darwin-amd64 pim && chmod 755 pim
 ```
 
 You can also just run directly from a clone of this repo if you have golang installed.
@@ -185,7 +191,7 @@ go run . -subs 'Learning Subscription,Other Subscription'
 
 ### Using pre-built binaries
 
-#### Linux/OSX
+#### Linux
 
 Run from the local directory
 
@@ -203,6 +209,25 @@ Now run without specifying path...
 
 ```
 pim -subs 'Learning Subscription,Other Subscription'
+```
+
+#### OSX
+
+Pim runs on OSX very similarly to Linux. However, due to Apple app signing restrictions, you'll likely get an error like this when running for the first time:
+
+> "gopim-darwin-amd64" cannot be opened because the developer cannot be verified.  
+macOS cannot verify that this app is free from malware
+
+Since I'm too cheap to fork out $99/yr for an Apple developer license, there's an extra step you'll need to do here.
+
+```
+xattr -d com.apple.quarantine pim
+```
+
+You can now run normally:
+
+```
+./pim -subs 'Learning Subscription,Other Subscription'
 ```
 
 #### Windows
@@ -251,9 +276,9 @@ go build -o pim
 - [ ] Support PIM Group activations
 - [X] Remove dependency on az cli
 - [X] Set up automated github builds
-- [ ] Support Windows & OSX
+- [X] Support Windows & OSX
   - [X] Support Windows
-  - [ ] Support and test OSX
+  - [X] Support and test OSX
 - [ ] Create TUI for interactive use
 - [ ] Create winget compatible installer
 - [ ] Create Linux install script
