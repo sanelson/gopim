@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,8 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -18,17 +17,78 @@ import (
 	"github.com/google/uuid"
 	"github.com/lmittmann/tint"
 	"github.com/spf13/viper"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity/cache"
 )
 
-func readConfig() {
-	viper.SetConfigName("pim")  // name of config file (without extension)
-	viper.SetConfigType("toml") // REQUIRED if the config file does not have the extension in the name
-	viper.AddConfigPath(".")    // optionally look for config in the working directory
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
+// Lifted caching example from SDK docs
+// see: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azidentity#example-package-PersistentUserAuthentication
+func retrieveRecord(authRecordPath string) (azidentity.AuthenticationRecord, error) {
+	record := azidentity.AuthenticationRecord{}
+	b, err := os.ReadFile(authRecordPath)
+	if err == nil {
+		err = json.Unmarshal(b, &record)
+	}
+	return record, err
+}
+
+func storeRecord(record azidentity.AuthenticationRecord, authRecordPath string) error {
+	b, err := json.Marshal(record)
+	if err == nil {
+		err = os.WriteFile(authRecordPath, b, 0600)
+	}
+	return err
+}
+
+func readConfig(configDir string) {
+	viper.SetConfigName("pim")     // name of config file (without extension)
+	viper.SetConfigType("toml")    // REQUIRED if the config file does not have the extension in the name
+	viper.AddConfigPath(configDir) // Main config location
+	viper.AddConfigPath(".")       // optionally look for config in the working directory
+	err := viper.ReadInConfig()    // Find and read the config file
+	if err != nil {                // Handle errors reading the config file
 		slog.Error("config file issue", "error", err)
 		os.Exit(1)
 	}
+}
+
+func initConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("Failed to get home directory", "error", err)
+		return "", err
+	}
+	// Create the config directory if it doesn't exist
+	configDir := home + "/.config/gopim"
+	if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		err = os.Mkdir(configDir, 0700)
+		if err != nil {
+			slog.Error("Failed to create config directory", "error", err)
+			return "", err
+		}
+	}
+
+	return configDir, nil
+}
+
+func initCacheDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("Failed to get home directory", "error", err)
+		return "", err
+	}
+	cacheDir := home + "/.cache/gopim"
+	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+		err = os.Mkdir(cacheDir, 0700)
+		if err != nil {
+			slog.Error("Failed to create cache directory", "error", err)
+			return "", err
+		}
+	}
+
+	return cacheDir, nil
 }
 
 func contains(slice []string, item string) bool {
@@ -40,128 +100,70 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-type CommandError struct {
-	Err    error
-	Stderr string
-}
-
-func (e *CommandError) LogError() {
-	//return fmt.Sprintf("command failed: %v\nstderr: %s", e.Err, e.Stderr)
-	slog.Error("command failed:", "error", e.Err, "stderr", e.Stderr)
-}
-
-func runCommand(cmd string, env []string) (string, *CommandError) {
-	slog.Debug("Running command:", "cmd", cmd)
-
-	var command *exec.Cmd
-	if runtime.GOOS == "windows" {
-		command = exec.Command("powershell", "-nologo", "-noprofile", cmd)
-	} else {
-		command = exec.Command("sh", "-c", cmd)
-	}
-
-	command.Env = append(os.Environ(), env...)
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	command.Stdout = &out
-	command.Stderr = &stderr
-	err := command.Run()
+func getRecordCache(authRecordPath string) (azidentity.AuthenticationRecord, azidentity.Cache, error) {
+	record, err := retrieveRecord(authRecordPath)
 	if err != nil {
-		cmdErr := &CommandError{
-			Err:    err,
-			Stderr: stderr.String(),
-		}
-		return "", cmdErr
+		slog.Warn("Failed to retrieve authentication record", "error", err)
+		return azidentity.AuthenticationRecord{}, azidentity.Cache{}, err
 	} else {
-		slog.Debug("Successfully ran command")
-		return out.String(), nil
+		slog.Info("Using cached authentication record")
 	}
-}
-
-func azureCLIVersion() (string, *CommandError) {
-	escape_quote := `"` // escape double quotes for bash
-
-	if runtime.GOOS == "windows" {
-		escape_quote = "`\"" // escape double quotes for PowerShell
-	}
-
-	version, cmdErr := runCommand("az version --output json --query '"+escape_quote+"azure-cli"+escape_quote+"'", nil)
-
-	if cmdErr != nil {
-		return "", cmdErr
+	c, err := cache.New(nil)
+	if err != nil {
+		slog.Warn("Failed to create cache, secure caching not possible in this runtime environment", "error", err)
+		slog.Info("Proceeding without persistent caching")
+		return record, azidentity.Cache{}, err
 	} else {
-		// Clean up version
-		version = strings.Trim(strings.TrimSpace(version), "\"")
-		return version, nil
+		slog.Info("Setting up persistent caching")
 	}
+	return record, c, err
 }
 
-func azureCLIInstalled() bool {
-	// check if Azure CLI is installed
-	version, cmdErr := azureCLIVersion()
-
-	if cmdErr != nil {
-		cmdErr.LogError()
-		slog.Error("Azure CLI not installed or not in path")
-		slog.Info("Install from https://learn.microsoft.com/en-us/cli/azure/install-azure-cli")
-		os.Exit(1)
+func loginAzure(tenant string, cachedir string) (*azidentity.InteractiveBrowserCredential, error) {
+	credentialOptions := azidentity.InteractiveBrowserCredentialOptions{
+		TenantID: tenant,
 	}
 
-	slog.Debug("Azure CLI is installed", "version", version)
-	return true
-}
-
-func azureLoggedIn() bool {
-	_, cmdErr := runCommand("az account show", nil)
-
-	if cmdErr != nil {
-		// We don't need to log the error here unless the command failed for some other reason
-		// Check the error message to see if it's a login error
-		if strings.Contains(cmdErr.Stderr, "Please run 'az login' to setup account") {
-			return false
+	var record azidentity.AuthenticationRecord
+	var c azidentity.Cache
+	var err error
+	authRecordPath := cachedir + "/authrecord.json"
+	if cachedir != "" {
+		record, c, err = getRecordCache(authRecordPath)
+		if err != nil {
+			slog.Warn("Failed to get record cache", "error", err)
 		} else {
-			cmdErr.LogError()
-			slog.Error("Failed to check login status")
-			os.Exit(1)
-		}
-	}
-	return true
-}
-
-func getAccessToken() (string, error) {
-	token, cmdErr := runCommand("az account get-access-token --query accessToken --output tsv", nil)
-
-	if cmdErr != nil {
-		cmdErr.LogError()
-		return "", fmt.Errorf("Failed to get access token: %w", cmdErr.Err)
-	}
-	return token, nil
-}
-
-func loginToAzure(tenant string) error {
-	if runtime.GOOS == "windows" {
-		// Open the login URL in the default web browser vs using WAM (Windows Authentication Manager)
-		// WAM behavior is still rather glitchy
-		// TODO: Is there a way to just set this for the current session/process?
-		_, cmdErr := runCommand("az config set core.enable_broker_on_windows=false", nil)
-
-		if cmdErr != nil {
-			cmdErr.LogError()
-			slog.Error("failed to set Azure CLI config to disable WAM login")
-			os.Exit(1)
+			credentialOptions.AuthenticationRecord = record
+			credentialOptions.Cache = c
 		}
 	}
 
-	_, cmdErr := runCommand(fmt.Sprintf("az login --allow-no-subscriptions -t '%s'", tenant), nil)
-
-	if cmdErr != nil {
-		cmdErr.LogError()
-		slog.Error("failed to login to Azure")
+	cred, err := azidentity.NewInteractiveBrowserCredential(&credentialOptions)
+	if err != nil {
+		slog.Error("Failed to interactively get credentails", "error", err)
 		os.Exit(1)
 	}
 
-	slog.Info("A web browser has been opened at https://login.microsoftonline.com. Please continue the login in the web browser. If no web browser is available or if the web browser fails to open, use device code flow with `az login --use-device-code`.")
-	return nil
+	if cachedir != "" {
+		if record == (azidentity.AuthenticationRecord{}) {
+			// No stored record; call Authenticate to acquire one.
+			// This will prompt the user to authenticate interactively.
+			slog.Debug("No current stored authentication record, prompting for authentication")
+			newRecord, err := cred.Authenticate(context.TODO(), nil)
+			if err != nil {
+				slog.Error("Failed to authenticate", "error", err)
+				os.Exit(1)
+			} else {
+				slog.Info("Successfully authenticated")
+			}
+			err = storeRecord(newRecord, authRecordPath)
+			if err != nil {
+				slog.Error("Failed to store authentication record", "error", err)
+			}
+		}
+	}
+
+	return cred, nil
 }
 
 func prepareRequest(method, url, token string) (*http.Request, error) {
@@ -230,11 +232,12 @@ func main() {
 	debug := flag.Bool("debug", false, "Debug mode")
 	subs := flag.String("subs", "", "Comma separated subscription names for PIM activation (required)")
 	tenant := flag.String("tenant", "", "Azure Tenant ID")
+	dryrun := flag.Bool("dryrun", false, "Dry run mode, do not activate PIM")
+	nocache := flag.Bool("nocache", false, "Do not use cached authentication record")
 	var version bool
 	flag.BoolVar(&version, "version", false, "print version information and exit")
 	flag.BoolVar(&version, "v", false, "short alias for -version")
 
-	//versioninfo.AddFlag(nil)
 	flag.Parse()
 
 	if version {
@@ -261,6 +264,14 @@ func main() {
 	)
 	slog.SetDefault(logger)
 
+	if *dryrun {
+		slog.Info("Dry run mode enabled, not activating PIM")
+	}
+
+	if *nocache {
+		slog.Info("Not using cached authentication record")
+	}
+
 	// Make sure subscriptions are provided
 	if *subs == "" {
 		slog.Error("No subscriptions provided")
@@ -268,11 +279,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Check if Azure CLI is installed
-	_ = azureCLIInstalled()
+	// Set up dynamic config vars
+	// Initialize config directory
+	configDir, err := initConfigDir()
+	if err != nil {
+		slog.Error("Failed to initialize config directory", "error", err)
+		os.Exit(1)
+	}
 
-	// read the config file
-	readConfig()
+	// read the config file and environment variables
+	readConfig(configDir)
 
 	// Get the tenant ID
 	if *tenant != "" {
@@ -285,26 +301,34 @@ func main() {
 		}
 	}
 
-	if azureLoggedIn() {
-		slog.Info("Already logged in to Azure. Skipping login step.")
-	} else {
-		slog.Info("Not logged in to Azure. Logging in.")
-		_ = loginToAzure(*tenant)
+	// Login to Azure
+	cacheDir := ""
+	if !*nocache {
+		cacheDir, err = initCacheDir()
+		if err != nil {
+			slog.Error("Failed to initialize cache directory", "error", err)
+			cacheDir = ""
+		}
+	}
+	cred, err := loginAzure(*tenant, cacheDir)
+	if err != nil {
+		slog.Error("Failed to login to Azure", "error", err)
+		os.Exit(1)
 	}
 
-	// Get the access token
-	token, err := getAccessToken()
+	// Create an HTTP client with a 30s timeout
+	context := context.Background()
+	client := &http.Client{Timeout: 30 * time.Second}
+	token, err := cred.GetToken(context, policy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}})
+
 	if err != nil {
 		slog.Error("Failed to get access token", "error", err)
 		os.Exit(1)
 	}
 
-	// Create an HTTP client with a 30s timeout
-	client := &http.Client{Timeout: 30 * time.Second}
-
 	// Download the role eligibility schedule instances
 	subscriptions := strings.Split(*subs, ",")
-	roles, err := getRESIs(subscriptions, token, *client)
+	roles, err := getRESIs(subscriptions, token.Token, *client)
 
 	if err != nil {
 		slog.Error("Failed to get role eligibility schedule instances", "error", err)
@@ -320,7 +344,7 @@ func main() {
 		sub := role["subscription"]
 		displayName := role["displayName"]
 
-		go func(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token string, client http.Client) {
+		go func(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token string, client http.Client, dryrun bool) {
 			defer wg.Done()
 
 			pimBody := map[string]interface{}{
@@ -356,42 +380,47 @@ func main() {
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(token)))
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := client.Do(req)
-			if err != nil {
-				slog.Error("Failed to activate PIM", "err", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 202 {
-				// Properly parse body
-				body, err := io.ReadAll(resp.Body)
-
+			// Send the request if not in dry run mode
+			if !dryrun {
+				resp, err := client.Do(req)
 				if err != nil {
-					slog.Error("Failed to read response body", "err", err)
-					slog.Error("Unknown PIM activation state", "StatusCode", resp.StatusCode)
-					return
+					slog.Error("Failed to activate PIM", "err", err)
 				}
+				defer resp.Body.Close()
 
-				// Parse the error message from the response
-				var data map[string]interface{}
-				if err := json.Unmarshal(body, &data); err != nil {
-					slog.Error("Failed to parse JSON response", "err", err)
-				}
+				if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 202 {
+					// Properly parse body
+					body, err := io.ReadAll(resp.Body)
 
-				// Check if "error" key exists and is a map
-				if errMap, ok := data["error"].(map[string]interface{}); ok {
-					// Check if "code" key exists and is a string
-					if code, ok := errMap["code"].(string); ok && code == "RoleAssignmentExists" {
-						slog.Warn("PIM is already activated for", "displayName", displayName)
+					if err != nil {
+						slog.Error("Failed to read response body", "err", err)
+						slog.Error("Unknown PIM activation state", "StatusCode", resp.StatusCode)
 						return
 					}
+
+					// Parse the error message from the response
+					var data map[string]interface{}
+					if err := json.Unmarshal(body, &data); err != nil {
+						slog.Error("Failed to parse JSON response", "err", err)
+					}
+
+					// Check if "error" key exists and is a map
+					if errMap, ok := data["error"].(map[string]interface{}); ok {
+						// Check if "code" key exists and is a string
+						if code, ok := errMap["code"].(string); ok && code == "RoleAssignmentExists" {
+							slog.Warn("PIM is already activated for", "displayName", displayName)
+							return
+						}
+					}
+
+					slog.Error("Failed to activate PIM", "StatusCode", resp.StatusCode, "body", string(body))
 				}
 
-				slog.Error("Failed to activate PIM", "StatusCode", resp.StatusCode, "body", string(body))
+				slog.Info("Successfully activated PIM")
+			} else {
+				slog.Info("Dry run mode, not activating PIM")
 			}
-
-			slog.Info("Successfully activated PIM")
-		}(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token, *client)
+		}(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token.Token, *client, *dryrun)
 	}
 
 	wg.Wait()

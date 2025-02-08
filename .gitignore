@@ -11,6 +11,9 @@ pim
 pim.exe
 gopim
 gopim.exe
+gopim-darwin*
+gopim-linux*
+gopim-windows*
 
 # Test binary, built with `go test -c`
 *.test
