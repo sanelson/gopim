@@ -230,6 +230,7 @@ func main() {
 	debug := flag.Bool("debug", false, "Debug mode")
 	subs := flag.String("subs", "", "Comma separated subscription names for PIM activation (required)")
 	tenant := flag.String("tenant", "", "Azure Tenant ID")
+	dryrun := flag.Bool("dryrun", false, "Dry run mode, do not activate PIM")
 	var version bool
 	flag.BoolVar(&version, "version", false, "print version information and exit")
 	flag.BoolVar(&version, "v", false, "short alias for -version")
@@ -240,6 +241,10 @@ func main() {
 	if version {
 		fmt.Println("Version:", Version())
 		os.Exit(0)
+	}
+
+	if *dryrun {
+		slog.Info("Dry run mode enabled, not activating PIM")
 	}
 
 	// Set the default log level
@@ -320,7 +325,7 @@ func main() {
 		sub := role["subscription"]
 		displayName := role["displayName"]
 
-		go func(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token string, client http.Client) {
+		go func(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token string, client http.Client, dryrun bool) {
 			defer wg.Done()
 
 			pimBody := map[string]interface{}{
@@ -356,42 +361,47 @@ func main() {
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(token)))
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := client.Do(req)
-			if err != nil {
-				slog.Error("Failed to activate PIM", "err", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 202 {
-				// Properly parse body
-				body, err := io.ReadAll(resp.Body)
-
+			// Send the request if not in dry run mode
+			if !dryrun {
+				resp, err := client.Do(req)
 				if err != nil {
-					slog.Error("Failed to read response body", "err", err)
-					slog.Error("Unknown PIM activation state", "StatusCode", resp.StatusCode)
-					return
+					slog.Error("Failed to activate PIM", "err", err)
 				}
+				defer resp.Body.Close()
 
-				// Parse the error message from the response
-				var data map[string]interface{}
-				if err := json.Unmarshal(body, &data); err != nil {
-					slog.Error("Failed to parse JSON response", "err", err)
-				}
+				if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 202 {
+					// Properly parse body
+					body, err := io.ReadAll(resp.Body)
 
-				// Check if "error" key exists and is a map
-				if errMap, ok := data["error"].(map[string]interface{}); ok {
-					// Check if "code" key exists and is a string
-					if code, ok := errMap["code"].(string); ok && code == "RoleAssignmentExists" {
-						slog.Warn("PIM is already activated for", "displayName", displayName)
+					if err != nil {
+						slog.Error("Failed to read response body", "err", err)
+						slog.Error("Unknown PIM activation state", "StatusCode", resp.StatusCode)
 						return
 					}
+
+					// Parse the error message from the response
+					var data map[string]interface{}
+					if err := json.Unmarshal(body, &data); err != nil {
+						slog.Error("Failed to parse JSON response", "err", err)
+					}
+
+					// Check if "error" key exists and is a map
+					if errMap, ok := data["error"].(map[string]interface{}); ok {
+						// Check if "code" key exists and is a string
+						if code, ok := errMap["code"].(string); ok && code == "RoleAssignmentExists" {
+							slog.Warn("PIM is already activated for", "displayName", displayName)
+							return
+						}
+					}
+
+					slog.Error("Failed to activate PIM", "StatusCode", resp.StatusCode, "body", string(body))
 				}
 
-				slog.Error("Failed to activate PIM", "StatusCode", resp.StatusCode, "body", string(body))
+				slog.Info("Successfully activated PIM")
+			} else {
+				slog.Info("Dry run mode, not activating PIM")
 			}
-
-			slog.Info("Successfully activated PIM")
-		}(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token, *client)
+		}(myPrincipalID, ownerRoleID, roleEligibilityScheduleID, sub, token.Token, *client, *dryrun)
 	}
 
 	wg.Wait()
