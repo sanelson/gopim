@@ -161,11 +161,19 @@ Usage of pim:
 
 ### Config
 
-`pim` will read config from either the current directory or from `$HOME/.config/gopim`
+`pim` will read config from either the current directory or from the following directories depending on your platform:
+
+* Linux: `$HOME/.config/gopim`
+* Windows: `%AppData%\gopim`
+* OSX: `$HOME/Library/Application Support/gopim`
 
 Note: You need to specify your Azure Tenant ID either in the `pim.toml` config file or as an argument.
 
-Use the `pim.toml.example` file as a template.
+Use the `pim.toml.example` file as a template. Make sure to double-quote values as certain strings may be parsed incorrectly without them.
+
+```toml
+tenant = "681648d6-6955-45b6-a2d2-5fcfd92aedf4"
+```
 
 ### Using Go to run
 
