@@ -108,7 +108,6 @@ Currently supported on Linux and Windows. OSX builds OK but needs testing.
 
 ### Prerequisites
 
-* [AZ Cli](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt)
 * [Go](https://go.dev) (optional for running/building from source)
 
 ### Installation
@@ -147,11 +146,22 @@ You can also just run directly from a clone of this repo if you have golang inst
 Usage of pim:
   -debug
         Debug mode
+  -dryrun
+        Dry run mode, do not activate PIM
+  -nocache
+        Do not use cached authentication record
   -subs string
         Comma separated subscription names for PIM activation (required)
   -tenant string
         Azure Tenant ID
+  -v    short alias for -version
+  -version
+        print version information and exit
 ```
+
+### Config
+
+`pim` will read config from either the current directory or from `$HOME/.config/gopim`
 
 Note: You need to specify your Azure Tenant ID either in the `pim.toml` config file or as an argument.
 
@@ -231,8 +241,8 @@ go build -o pim
 ## Roadmap
 
 - [ ] Support PIM Group activations
-- [ ] Remove dependency on az cli
-- [ ] Set up automated github builds
+- [X] Remove dependency on az cli
+- [X] Set up automated github builds
 - [ ] Support Windows & OSX
   - [X] Support Windows
   - [ ] Support and test OSX
