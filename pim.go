@@ -20,17 +20,75 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity/cache"
 )
 
-func readConfig() {
-	viper.SetConfigName("pim")  // name of config file (without extension)
-	viper.SetConfigType("toml") // REQUIRED if the config file does not have the extension in the name
-	viper.AddConfigPath(".")    // optionally look for config in the working directory
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
+// Lifted caching example from SDK docs
+// see: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azidentity#example-package-PersistentUserAuthentication
+func retrieveRecord(authRecordPath string) (azidentity.AuthenticationRecord, error) {
+	record := azidentity.AuthenticationRecord{}
+	b, err := os.ReadFile(authRecordPath)
+	if err == nil {
+		err = json.Unmarshal(b, &record)
+	}
+	return record, err
+}
+
+func storeRecord(record azidentity.AuthenticationRecord, authRecordPath string) error {
+	b, err := json.Marshal(record)
+	if err == nil {
+		err = os.WriteFile(authRecordPath, b, 0600)
+	}
+	return err
+}
+
+func readConfig(configDir string) {
+	viper.SetConfigName("pim")     // name of config file (without extension)
+	viper.SetConfigType("toml")    // REQUIRED if the config file does not have the extension in the name
+	viper.AddConfigPath(configDir) // Main config location
+	viper.AddConfigPath(".")       // optionally look for config in the working directory
+	err := viper.ReadInConfig()    // Find and read the config file
+	if err != nil {                // Handle errors reading the config file
 		slog.Error("config file issue", "error", err)
 		os.Exit(1)
 	}
+}
+
+func initConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("Failed to get home directory", "error", err)
+		return "", err
+	}
+	// Create the config directory if it doesn't exist
+	configDir := home + "/.config/gopim"
+	if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		err = os.Mkdir(configDir, 0700)
+		if err != nil {
+			slog.Error("Failed to create config directory", "error", err)
+			return "", err
+		}
+	}
+
+	return configDir, nil
+}
+
+func initCacheDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("Failed to get home directory", "error", err)
+		return "", err
+	}
+	cacheDir := home + "/.cache/gopim"
+	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+		err = os.Mkdir(cacheDir, 0700)
+		if err != nil {
+			slog.Error("Failed to create cache directory", "error", err)
+			return "", err
+		}
+	}
+
+	return cacheDir, nil
 }
 
 func contains(slice []string, item string) bool {
@@ -40,6 +98,72 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func getRecordCache(authRecordPath string) (azidentity.AuthenticationRecord, azidentity.Cache, error) {
+	record, err := retrieveRecord(authRecordPath)
+	if err != nil {
+		slog.Warn("Failed to retrieve authentication record", "error", err)
+		return azidentity.AuthenticationRecord{}, azidentity.Cache{}, err
+	} else {
+		slog.Info("Using cached authentication record")
+	}
+	c, err := cache.New(nil)
+	if err != nil {
+		slog.Warn("Failed to create cache, secure caching not possible in this runtime environment", "error", err)
+		slog.Info("Proceeding without persistent caching")
+		return record, azidentity.Cache{}, err
+	} else {
+		slog.Info("Setting up persistent caching")
+	}
+	return record, c, err
+}
+
+func loginAzure(tenant string, cachedir string) (*azidentity.InteractiveBrowserCredential, error) {
+	credentialOptions := azidentity.InteractiveBrowserCredentialOptions{
+		TenantID: tenant,
+	}
+
+	var record azidentity.AuthenticationRecord
+	var c azidentity.Cache
+	var err error
+	authRecordPath := cachedir + "/authrecord.json"
+	if cachedir != "" {
+		record, c, err = getRecordCache(authRecordPath)
+		if err != nil {
+			slog.Warn("Failed to get record cache", "error", err)
+		} else {
+			credentialOptions.AuthenticationRecord = record
+			credentialOptions.Cache = c
+		}
+	}
+
+	cred, err := azidentity.NewInteractiveBrowserCredential(&credentialOptions)
+	if err != nil {
+		slog.Error("Failed to interactively get credentails", "error", err)
+		os.Exit(1)
+	}
+
+	if cachedir != "" {
+		if record == (azidentity.AuthenticationRecord{}) {
+			// No stored record; call Authenticate to acquire one.
+			// This will prompt the user to authenticate interactively.
+			slog.Debug("No current stored authentication record, prompting for authentication")
+			newRecord, err := cred.Authenticate(context.TODO(), nil)
+			if err != nil {
+				slog.Error("Failed to authenticate", "error", err)
+				os.Exit(1)
+			} else {
+				slog.Info("Successfully authenticated")
+			}
+			err = storeRecord(newRecord, authRecordPath)
+			if err != nil {
+				slog.Error("Failed to store authentication record", "error", err)
+			}
+		}
+	}
+
+	return cred, nil
 }
 
 func prepareRequest(method, url, token string) (*http.Request, error) {
@@ -109,20 +233,16 @@ func main() {
 	subs := flag.String("subs", "", "Comma separated subscription names for PIM activation (required)")
 	tenant := flag.String("tenant", "", "Azure Tenant ID")
 	dryrun := flag.Bool("dryrun", false, "Dry run mode, do not activate PIM")
+	nocache := flag.Bool("nocache", false, "Do not use cached authentication record")
 	var version bool
 	flag.BoolVar(&version, "version", false, "print version information and exit")
 	flag.BoolVar(&version, "v", false, "short alias for -version")
 
-	//versioninfo.AddFlag(nil)
 	flag.Parse()
 
 	if version {
 		fmt.Println("Version:", Version())
 		os.Exit(0)
-	}
-
-	if *dryrun {
-		slog.Info("Dry run mode enabled, not activating PIM")
 	}
 
 	// Set the default log level
@@ -144,6 +264,14 @@ func main() {
 	)
 	slog.SetDefault(logger)
 
+	if *dryrun {
+		slog.Info("Dry run mode enabled, not activating PIM")
+	}
+
+	if *nocache {
+		slog.Info("Not using cached authentication record")
+	}
+
 	// Make sure subscriptions are provided
 	if *subs == "" {
 		slog.Error("No subscriptions provided")
@@ -151,8 +279,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// read the config file
-	readConfig()
+	// Set up dynamic config vars
+	// Initialize config directory
+	configDir, err := initConfigDir()
+	if err != nil {
+		slog.Error("Failed to initialize config directory", "error", err)
+		os.Exit(1)
+	}
+
+	// read the config file and environment variables
+	readConfig(configDir)
 
 	// Get the tenant ID
 	if *tenant != "" {
@@ -165,11 +301,16 @@ func main() {
 		}
 	}
 
-	credentialOptions := azidentity.InteractiveBrowserCredentialOptions{
-		TenantID: *tenant,
+	// Login to Azure
+	cacheDir := ""
+	if !*nocache {
+		cacheDir, err = initCacheDir()
+		if err != nil {
+			slog.Error("Failed to initialize cache directory", "error", err)
+			cacheDir = ""
+		}
 	}
-
-	cred, err := azidentity.NewInteractiveBrowserCredential(&credentialOptions)
+	cred, err := loginAzure(*tenant, cacheDir)
 	if err != nil {
 		slog.Error("Failed to login to Azure", "error", err)
 		os.Exit(1)
