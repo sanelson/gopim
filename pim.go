@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -55,13 +56,13 @@ func readConfig(configDir string) {
 }
 
 func initConfigDir() (string, error) {
-	home, err := os.UserHomeDir()
+	// Create the config directory if it doesn't exist
+	configDir, err := os.UserConfigDir()
 	if err != nil {
-		slog.Error("Failed to get home directory", "error", err)
+		slog.Error("Failed to get user config directory", "error", err)
 		return "", err
 	}
-	// Create the config directory if it doesn't exist
-	configDir := home + "/.config/gopim"
+	configDir = filepath.Join(configDir, "gopim")
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		err = os.Mkdir(configDir, 0700)
 		if err != nil {
@@ -74,12 +75,12 @@ func initConfigDir() (string, error) {
 }
 
 func initCacheDir() (string, error) {
-	home, err := os.UserHomeDir()
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		slog.Error("Failed to get home directory", "error", err)
+		slog.Error("Failed to get user cache directory", "error", err)
 		return "", err
 	}
-	cacheDir := home + "/.cache/gopim"
+	cacheDir = filepath.Join(cacheDir, "gopim")
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
 		err = os.Mkdir(cacheDir, 0700)
 		if err != nil {
@@ -127,7 +128,7 @@ func loginAzure(tenant string, cachedir string) (*azidentity.InteractiveBrowserC
 	var record azidentity.AuthenticationRecord
 	var c azidentity.Cache
 	var err error
-	authRecordPath := cachedir + "/authrecord.json"
+	authRecordPath := filepath.Join(cachedir, "authRecord.json")
 	if cachedir != "" {
 		record, c, err = getRecordCache(authRecordPath)
 		if err != nil {
