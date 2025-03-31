@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/google/uuid"
 	"github.com/lmittmann/tint"
 	"github.com/spf13/viper"
@@ -264,6 +265,27 @@ func filterRoles(roles map[string]map[string]string, subscriptions []string) map
 	return filteredRoles
 }
 
+func buildForm(subscriptions *[]string) (*huh.Form, *[]string) {
+
+	choices := []string{}
+	myoptions := make([]huh.Option[string], len(*subscriptions))
+	for i, sub := range *subscriptions {
+		myoptions[i] = huh.NewOption(sub, sub)
+	}
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Subscriptions").
+				Options(
+					myoptions...,
+				).Value(&choices),
+		),
+	)
+
+	return form, &choices
+}
+
 func main() {
 	// Handle command line flags
 	debug := flag.Bool("debug", false, "Debug mode")
@@ -272,6 +294,7 @@ func main() {
 	tenant := flag.String("tenant", "", "Azure Tenant ID")
 	dryrun := flag.Bool("dryrun", false, "Dry run mode, do not activate PIM")
 	nocache := flag.Bool("nocache", false, "Do not use cached authentication record")
+	interactive := flag.Bool("interactive", true, "Interactive mode, prompt for subscriptions")
 	var version bool
 	flag.BoolVar(&version, "version", false, "print version information and exit")
 	flag.BoolVar(&version, "v", false, "short alias for -version")
@@ -285,7 +308,7 @@ func main() {
 
 	// Set the default log level
 	lvl := new(slog.LevelVar)
-	lvl.Set(slog.LevelInfo)
+	lvl.Set(slog.LevelWarn)
 
 	if *debug {
 		lvl.Set(slog.LevelDebug)
@@ -311,7 +334,7 @@ func main() {
 	}
 
 	// Make sure subscriptions are provided
-	if !*list && *subs == "" {
+	if (!*interactive && !*list) && *subs == "" {
 		slog.Error("No subscriptions provided")
 		flag.Usage()
 		os.Exit(1)
@@ -374,6 +397,28 @@ func main() {
 		os.Exit(1)
 	} else {
 		slog.Info("Successfully retrieved role eligibility schedule instances")
+	}
+
+	// Get list of available subscriptions
+	available_subs := make([]string, 0)
+	for sub := range roles {
+		available_subs = append(available_subs, sub)
+	}
+
+	for _, sub := range available_subs {
+		slog.Info("Sub found", "subscription", sub)
+	}
+
+	if *interactive && !*list && *subs == "" {
+		slog.Info("Interactive mode enabled, prompting for subscriptions")
+		form, choices := buildForm(&available_subs)
+		err = form.Run()
+		if err != nil {
+			slog.Error("Failed to render form", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("Selected subscriptions", "subscriptions", *choices)
+		subscriptions = *choices
 	}
 
 	if *list {
