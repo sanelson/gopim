@@ -302,7 +302,7 @@ func main() {
 	flag.Parse()
 
 	if version {
-		fmt.Println("Version:", Version())
+		fmt.Println("Version:", version)
 		os.Exit(0)
 	}
 
